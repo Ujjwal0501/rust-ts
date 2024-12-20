@@ -1,0 +1,17 @@
+{
+  "name": "my-rust-ts-project",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build:rust": "cd rust-proj && wasm-pack build --target web",
+    "dev": "vite",
+    "build": "npm run build:rust && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vite": "^4.0.0",
+    "vite-plugin-wasm": "^3.0.0"
+  }
+}

@@ -319,7 +319,7 @@ const encodeCiphertext = (input: Ciphertext): string => {
     const gamma_g2Buffer = writeProjPointTypeFp2(input.gamma_g2);
     const sa1Buffer = Buffer.concat(input.sa1.map(writeProjPointTypeFp));
     const sa2Buffer = Buffer.concat(input.sa2.map(writeProjPointTypeFp2));
-    const enc_keyBuffer = writeProjPointTypeFp12(input.enc_key);
+    const enc_keyBuffer = Buffer.from(fp12ToHex(input.enc_key));
     const tBuffer = Buffer.alloc(4);
     tBuffer.writeUInt32LE(input.t, 0);
 
@@ -343,6 +343,12 @@ function demoFieldOperations() {
     // Create base points in G1 and G2
     const g1Base = bls.G1.ProjectivePoint.BASE;
     const g2Base = bls.G2.ProjectivePoint.BASE;
+    console.log('G1 generator: ', g1Base.toHex(true));
+    console.log('G2 generator: ', g2Base.toHex(true));
+
+    const e_ghH = bls.pairing(g1Base, g2Base);
+    console.log(fp12ToHex(e_ghH));
+    // return
 
     // Perform G1 addition
     const g1Sum = g1Base.add(g1Base);
@@ -415,14 +421,14 @@ function demoFieldOperations() {
 
 function hexToFp12(hex: string): any {
     const c0 = bls.fields.Fp6.create({
-        c0: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(0, 64)), c1: BigInt('0x' + hex.slice(64, 128)) }),
-        c1: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(128, 192)), c1: BigInt('0x' + hex.slice(192, 256)) }),
-        c2: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(256, 320)), c1: BigInt('0x' + hex.slice(320, 384)) })
+        c0: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(0, 96)), c1: BigInt('0x' + hex.slice(96, 192)) }),
+        c1: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(192, 288)), c1: BigInt('0x' + hex.slice(288, 384)) }),
+        c2: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(384, 480)), c1: BigInt('0x' + hex.slice(480, 576)) })
     });
     const c1 = bls.fields.Fp6.create({
-        c0: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(384, 448)), c1: BigInt('0x' + hex.slice(448, 512)) }),
-        c1: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(512, 576)), c1: BigInt('0x' + hex.slice(576, 640)) }),
-        c2: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(640, 704)), c1: BigInt('0x' + hex.slice(704, 768)) })
+        c0: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(576, 672)), c1: BigInt('0x' + hex.slice(672, 768)) }),
+        c1: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(768, 864)), c1: BigInt('0x' + hex.slice(864, 960)) }),
+        c2: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(960, 1056)), c1: BigInt('0x' + hex.slice(1056, 1152)) })
     });
     return bls.fields.Fp12.create({ c0, c1 });
 }
@@ -437,12 +443,12 @@ function fp12ToHex(fp12: any): string {
     const c0 = fp12.c0;
     const c1 = fp12.c1;
     return [
-        c0.c0.c0.toString(16), c0.c0.c1.toString(16),
-        c0.c1.c0.toString(16), c0.c1.c1.toString(16),
-        c0.c2.c0.toString(16), c0.c2.c1.toString(16),
-        c1.c0.c0.toString(16), c1.c0.c1.toString(16),
-        c1.c1.c0.toString(16), c1.c1.c1.toString(16),
-        c1.c2.c0.toString(16), c1.c2.c1.toString(16)
+        bigintToBigEndianHex(c0.c0.c0, 48), bigintToBigEndianHex(c0.c0.c1, 48),
+        bigintToBigEndianHex(c0.c1.c0, 48), bigintToBigEndianHex(c0.c1.c1, 48),
+        bigintToBigEndianHex(c0.c2.c0, 48), bigintToBigEndianHex(c0.c2.c1, 48),
+        bigintToBigEndianHex(c1.c0.c0, 48), bigintToBigEndianHex(c1.c0.c1, 48),
+        bigintToBigEndianHex(c1.c1.c0, 48), bigintToBigEndianHex(c1.c1.c1, 48),
+        bigintToBigEndianHex(c1.c2.c0, 48), bigintToBigEndianHex(c1.c2.c1, 48)
     ].join('');
 }
 
@@ -458,14 +464,32 @@ const testCrypt = () => {
     console.log(ciph);
     const encoded = encodeCiphertext(ciph);
     console.log(encoded);
-    demoFieldOperations();
 }
 
-const hexString = 'bad6c713441e1fd3ebb5e5dd9103df5ac2ec3c5f4ac4411b0ed30b29152719880aca439dc1efb6f7eb60c6a0e3dcdb176f78799d1d8069c918aed39088f909cbc3ef7cfb08068776cd3d33d1742916df6013c4888db5b3be13e57a70e9a5ec11cd879994b53f9ba997b02860b61e43d179f1ae9b14d26cdcf3dcdd20dff44a93ef4a4eb4bc1d610d02c3d0efef62db14b0d664d24eb02814e2540fa0c8780977c7517e5e29a8b83589dc0554da16036dc3524fd4975a92c915a09515fc3fa602f006341f32a548e10e9160321e5e78781be4de6da1ebb8748cb6935503a22e39c376a551db20c44dd3d998bee93735094dd7fd6442efeed5dc224fa35f5227cbfcc6791f17b27483e0cfbaa3857de8401c260674bd90e2029b5344f5cf25b015f2d467073f1ab24b30079b69813023c4ddedde2cc89a2fa47ceb070c5ee583b25a43cfb274af9fae35e2faf593e6e817ccef0f098a8b898ca8a97d3099f27230676455e4cf77fadee23e1a6713f489d3ce443ad71d39c3d684750e3a390219168e930d617a00224f129e4305f822ff1f948d4fdbfe6de4363ac11d2279afe69b26677b6592d177d8505f5c69e8706203435c0c3bba7f754a6d0e9a6b02fef93821ae5bc1fd952b430d6a565e0d520f0a394c70891546ff3ae3e0a876d877a90f332aafec600bc9c52722e793ba3dca8774807db51eff0fde4c8f1bc9e2f2b79023017667ba75b60346b5022634f4d5056ad2528e713fce9e003313b5d174d8e86322e7112986260bb3084ce0fae987eb3b292e9081877db55655ffe3e95f8505'; // Your Fp12 hex string here
-const fp12 = hexToFp12(hexString);
-const cyclotomicFp12 = convertToCyclotomic(fp12);
-const cyclotomicHex = fp12ToHex(cyclotomicFp12);
+demoFieldOperations();
 
-console.log('Cyclotomic Fp12 in hex:', cyclotomicHex);
+function bigintToBigEndianHex(value: BigInt, length: number): string {
+    // Convert BigInt to hex string without the '0x' prefix
+    let hex = value.toString(16);
+    
+    // Ensure the hex string is padded to the desired length
+    if (hex.length > length * 2) {
+        throw new Error('BigInt value is too large to fit in the specified length');
+    }
+    
+    // Pad the hex string with leading zeros
+    hex = hex.padStart(length * 2, '0');
+    
+    // Convert the hex string to a byte array
+    const byteArray = hex.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || [];
+    
+    // Reverse the byte array to get big-endian format
+    const reversedByteArray = byteArray.reverse();
+    
+    // Convert the reversed byte array back to a hex string
+    const bigEndianHex = reversedByteArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
+    
+    return bigEndianHex;
+}
 
 export { decodeAggregateKey, decodePowersOfTau, encodeCiphertext, encrypt, testCrypt };

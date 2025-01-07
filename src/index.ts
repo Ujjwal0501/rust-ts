@@ -112,31 +112,42 @@ type PowersOfTau = {
  */
 const encrypt = (params: PowersOfTau, apk: AggregateKey, t: number) => {
     // Initialize an ArrayBuffer (tau) from a fixed string
-    const gamma = bls.G1.normPrivateKeyToScalar('99173daeb1c2bd38993e379ad5b761a88de97c3ba38b1335e5828f8f30788a4d');
+    const gamma = bls.fields.Fr.create(BigInt('0x' + reverseEndianess('8660d3c2a2ab458dd6da04d3e7cb5cf6edb702dfa2fa0c952cd6f3bcdc0fdb1a')));
+    console.log(gamma.toString(16));
     // const gamma = bls.G1.normPrivateKeyToScalar(bls.utils.randomPrivateKey());
-    const gamma_g2 = bls.G2.ProjectivePoint.BASE.multiply(gamma);
+    const gamma_g2 = params.powers_of_h[0].multiply(gamma);
+    console.log(gamma_g2.toHex(true));
 
-    let g = bls.G1.ProjectivePoint.BASE;
-    let h = bls.G2.ProjectivePoint.BASE;
+    let g = params.powers_of_g[0];
+    let h = params.powers_of_h[0];
 
-    let sa1 = [g, g];
-    let sa2: ProjPointType<Fp2>[] = Array(6).fill(h);
+    let sa1 = [bls.G1.ProjectivePoint.BASE, bls.G1.ProjectivePoint.BASE];
+    let sa2: ProjPointType<Fp2>[] = Array(6).fill(bls.G2.ProjectivePoint.BASE);
+    sa1.forEach((value, index) => {
+        console.log(`sa1[${index}]: ${value.toHex(true)}`);
+    });
+    sa2.forEach((value, index) => {
+        console.log(`sa2[${index}]: ${value.toHex(true)}`);
+    });
 
     const hexValues = [
-        'c1c11f354976fcd12b511f2926346725c96abaaac9f1bf33da92c1bbcb87f434',
-        '0f73503ec79f0facb0ec92d92ca7a2405905bed63049a6d47b77a022d23b3e0d',
-        'dfad9c2cb7393f80c275a99c88591e97c8f49cf4f3952645382890587e2a6137',
-        '5dc4a5352d60d1b65f5749bd75bbd4bed9a56d47f1c056cf217488752fc9e04b',
-        '7d7c26f5c96021a4864c5885d27f62efe021830a5e127e16ab623f31ae4f1a56'
+        reverseEndianess('08ca6f2a35f8f6f9cad58e9d764d450af154c246fc04266151e2a5493ff02943'),
+        reverseEndianess('8696a66087578b92e1b4b11c6b4c06d4694a9bed1f9468f0115e7f2648eb021d'),
+        reverseEndianess('91e201cc83dc03cc47d63cfb8a9016e73ffd1a78fffd14e4dfcdf2cbb9a7245d'),
+        reverseEndianess('a90598c6e0f25c3a104fc94632b1d58cf21bca3bbd7e41da07feb9c14e0fa60d'),
+        reverseEndianess('d3f5a9fc8abfef02fb6095c08ba4f3445b36f0fb963579bc5112d34a02044567')
     ];
 
     let s = hexValues.map(hex => bls.G1.normPrivateKeyToScalar(hex));
+    s.forEach((value, index) => {
+        console.log(`s[${index}]: ${value.toString(16)}`);
+    });
     // const s = Array.from({ length: 5 }, () => bls.G1.normPrivateKeyToScalar(bls.utils.randomPrivateKey()));
 
     // sa1[0] = s0*ask + s3*g^{tau^t} + s4*g
     sa1[0] = apk.ask.multiply(s[0])
-        .add(g.multiply(BigInt(t)).multiply(s[3]))
-        .add(g.multiply(s[4]));
+        .add(params.powers_of_g[t].multiply(s[3]))
+        .add(params.powers_of_g[0].multiply(s[4]));
 
     // sa1[1] = s2*g
     sa1[1] = g.multiply(s[2]);
@@ -149,8 +160,8 @@ const encrypt = (params: PowersOfTau, apk: AggregateKey, t: number) => {
     sa2[1] = apk.z_g2.multiply(s[0]);
 
     // sa2[2] = s0*h^tau + s1*h^tau
-    sa2[2] = h.multiply(s[0])
-        .add(h.multiply(s[1]));
+    sa2[2] = params.powers_of_h[1].multiply(s[0])
+        .add(params.powers_of_h[1].multiply(s[1]));
 
     // sa2[3] = s1*h
     sa2[3] = h.multiply(s[1]);
@@ -164,7 +175,7 @@ const encrypt = (params: PowersOfTau, apk: AggregateKey, t: number) => {
         .multiply(s[4]);
 
     // enc_key = s4*e_gh
-    const enc_key = bls.fields.Fp12.mul(apk.e_gh, s[4]);
+    const enc_key = bls.fields.Fp12.pow(apk.e_gh, s[4]);
     // const enc_key = apk.e_gh.multiply(s[4]);
 
     return { gamma_g2, sa1, sa2, enc_key, t };
@@ -233,8 +244,6 @@ const decodeAggregateKey = (input: string): AggregateKey => {
         const points: Array<ProjPointType<Fp>> = [];
         for (let i = 0; i < count; i++) {
             const pointBuffer = buffer.slice(offset, offset + 48);
-            console.log(pointBuffer);
-            console.log(BigInt('0x' + pointBuffer.toString('hex')));
             const point = bls.G1.ProjectivePoint.fromHex(new Uint8Array(pointBuffer));
             points.push(point);
             offset += 48;
@@ -257,7 +266,7 @@ const decodeAggregateKey = (input: string): AggregateKey => {
         const points: Array<Fp> = [];
         for (let i = 0; i < 12; i++) {
             const pointBuffer = buffer.slice(offset, offset + 48);
-            const point = BigInt('0x' + pointBuffer.toString('hex'));
+            const point = BigInt('0x' + pointBuffer.reverse().toString('hex'));
             points.push(point);
             offset += 48;
         }
@@ -310,28 +319,16 @@ const encodeCiphertext = (input: Ciphertext): string => {
         return Buffer.from(hex, 'hex');
     };
 
-    const writeProjPointTypeFp12 = (point: Fp12) => {
-        const hex = bls.fields.Fp12.toBytes(point);
-        // const hex = point.toHex();
-        return Buffer.from(hex);
-    };
-
     const gamma_g2Buffer = writeProjPointTypeFp2(input.gamma_g2);
     const sa1Buffer = Buffer.concat(input.sa1.map(writeProjPointTypeFp));
     const sa2Buffer = Buffer.concat(input.sa2.map(writeProjPointTypeFp2));
-    const enc_keyBuffer = Buffer.from(fp12ToHex(input.enc_key));
-    const tBuffer = Buffer.alloc(4);
-    tBuffer.writeUInt32LE(input.t, 0);
+    const enc_keyBuffer = Buffer.from(fp12ToHex(input.enc_key), 'hex');
+    const tBuffer = Buffer.alloc(8);
+    tBuffer.writeBigUInt64LE(BigInt(input.t), 0);
 
-    const sa1LengthBuffer = Buffer.alloc(8);
-    sa1LengthBuffer.writeBigUInt64LE(BigInt(input.sa1.length), 0);
+    const totalLength = gamma_g2Buffer.length + sa1Buffer.length + sa2Buffer.length + enc_keyBuffer.length + tBuffer.length;
 
-    const sa2LengthBuffer = Buffer.alloc(8);
-    sa2LengthBuffer.writeBigUInt64LE(BigInt(input.sa2.length), 0);
-
-    const totalLength = gamma_g2Buffer.length + sa1LengthBuffer.length + sa1Buffer.length + sa2LengthBuffer.length + sa2Buffer.length + enc_keyBuffer.length + tBuffer.length;
-
-    const resultBuffer = Buffer.concat([gamma_g2Buffer, sa1LengthBuffer, sa1Buffer, sa2LengthBuffer, sa2Buffer, enc_keyBuffer, tBuffer], totalLength);
+    const resultBuffer = Buffer.concat([gamma_g2Buffer, sa1Buffer, sa2Buffer, enc_keyBuffer, tBuffer], totalLength);
     // const resultBuffer = Buffer.concat([gamma_g2Buffer, sa1Buffer, sa2Buffer, enc_keyBuffer, tBuffer], totalLength);
     console.log(enc_keyBuffer.toString('hex'));
 
@@ -345,6 +342,9 @@ function demoFieldOperations() {
     const g2Base = bls.G2.ProjectivePoint.BASE;
     console.log('G1 generator: ', g1Base.toHex(true));
     console.log('G2 generator: ', g2Base.toHex(true));
+
+    const scalar = bls.fields.Fr.create(BigInt('0x1d8a77a2bc0faf4c4c904eed119108ed9b375265f7d06cec6862a2a97c3adb27'));
+    console.log('Scalar: ', scalar.toString(16));
 
     const e_ghH = bls.pairing(g1Base, g2Base);
     console.log(fp12ToHex(e_ghH));
@@ -375,10 +375,12 @@ function demoFieldOperations() {
     const g1_sub = g1_a.subtract(g1_b);
     const g1_neg = g1_a.negate();
     const g1_dbl = g1_a.double();
+    const g1_scalar_mul = g1_a.multiply(scalar);
     console.log('G1 a + b: ', g1_sum.toHex(true));
     console.log('G1 a - b: ', g1_sub.toHex(true));
     console.log('G1 -a: ', g1_neg.toHex(true));
     console.log('G1 2a: ', g1_dbl.toHex(true));
+    console.log('G1 scalar mul: ', g1_scalar_mul.toHex(true));
 
     // Create an Fp2 element and do multiplication
     const fp2_a = bls.fields.Fp2.create({c0: BigInt('0x848e9f7ae435bd738c33ae1f11cefb472b29a090de5ce00740b8ec1bd30fdbb27eb7e65162eed68c55e0bb03bf749857'), c1: BigInt('0x0f8faa02f0dd3225ca98d8306f8efa4e3f62a13efc342f3466d3e56be5144dae68cafab0f99ddf1f04a6659806b12235')});
@@ -397,38 +399,51 @@ function demoFieldOperations() {
     const g2_sub = g2_a.subtract(g2_b);
     const g2_neg = g2_a.negate();
     const g2_dbl = g2_a.double();
+    const g2_scalar_mul = g2_a.multiply(scalar);
     console.log('G2 a + b: ', g2_sum.toHex(true));
     console.log('G2 a - b: ', g2_sub.toHex(true));
     console.log('G2 -a: ', g2_neg.toHex(true));
     console.log('G2 2a: ', g2_dbl.toHex(true));
+    console.log('G2 scalar mul: ', g2_scalar_mul.toHex(true));
 
     // Create an Fp12 element and do squaring
-    const someFp12 = bls.fields.Fp12.create({
-        c0: bls.fields.Fp6.create({
-            c0: bls.fields.Fp2.create({ c0: BigInt(1), c1: BigInt(0) }),
-            c1: bls.fields.Fp2.create({ c0: BigInt(0), c1: BigInt(1) }),
-            c2: bls.fields.Fp2.create({ c0: BigInt(2), c1: BigInt(3) })
-        }),
-        c1: bls.fields.Fp6.create({
-            c0: bls.fields.Fp2.create({ c0: BigInt(4), c1: BigInt(5) }),
-            c1: bls.fields.Fp2.create({ c0: BigInt(6), c1: BigInt(7) }),
-            c2: bls.fields.Fp2.create({ c0: BigInt(8), c1: BigInt(9) })
-        })
-    });
-    const fp12Squared = bls.fields.Fp12.mul(someFp12, someFp12);
-    console.log('Fp12 squared:', fp12Squared);
+    const fp12_a = hexToFp12('7b41018107fbe009aeb2ae912921bb2145b658bff588daea81a2d53a8c4aee171935fcc96fb395398ae4e4b20d937e16967f5e6a543f14a6751a869bfd22c8d96857389065eb86aa6784483efafc422ddb530f3dd76b3ce620605f6e21ee8c13f0a6b6f84a6ab78fdc1167e447c4f3a1d7cc51cf686646b7b31199d3e453c009ca949eb79696bf3d64c68a92e66fcc1514605dea849d01626006d806aca856a641993f84d2c620e6c97f4d8773c7664baee35761c576f687d6a643c3c6257b07f1f07ec6b0eb29ebaa9cb4088b29db25d2612fa604c96b3d148f0f8a954a0777b6e21f4b51f69530401651d1d0c9480ff23d5c0c0d34ede48be9c08dd6bbee77015deddac23d10eebd64ff1ecbce86a696f051fabe6c26e15e3b946afcc2b613f0b3a2126b6533792284bc5fc90a899c4c3a05b2491ce6903a9b2d85f30d630f421324492cbbbaf174cdc1a29adc110bb4891940fa9e8ad79520296819a6b6a32a578f7283c44d9c45e0c2676e0bbb4522cbdc23baebfa3cb008f43700a67207d7eb10a9d82cc576cbe3e10bac5e23613d456c18a512180869f48b52117c8dd1de9ce4728737d3239cfe829ccea8740e42c737ff961d5cff8d9ca0da3434ed909a3d362411cdb5c8e1bc917913c3cd783c3974621309d255f81c06e46132e0076209171b0ffea3ed0541e03d78856c018912927c520c56af071062972d1cb07276d8dcea9746000dbca97f78060e1815d22f5f88652aa53ae1664e449457c2e700e65efdaff38ac0a7849f4966411153dfd1befa7bab0d1889cc643e82809911');
+    const fp12_b = hexToFp12('d9b0619e9e724685d2eb06d509523870f9dfe07c7d7fb623632fc8f3ef8acd66fd9ed31a79af676ac1c2adc48ff018066f12bda4c5b225652d002ccba86315d57ebf098d35f3987a0b79f4d989c09c0c6373e58ac42c24e5a3b16d3eafa3e91020f0bfea83f3f1736732e71aac76e40399ec881a62a93426306be1e9dfc6645f1649a1d26d7d1ada5aca07c57551250749995a15db818c0aa7acb4606e7f41b65375308abbd547f7b8d90f10e1a7bfba60924a451108c8b896efa7355e14af10c096bb64e70e0c055e27e79b3b7552aa0b36bd3eace4759e13a31eabaea322bf978d2815b287e7c4d31281c85898090b57af368ceefe8be408504a0d57c542ad8e73f44211df17c89a2fd099f25895615828c884d9c31e514819d63856841601cce68807457db323e23db4bbc9a80900fb19aafd655069700db1b5d5a5753adedab2bd556fdc1774a54f0733a51e3c18f16e700f87ade824f35dde86023a5b7d816031e0eac3c4d82a80637a777969815fbd3ddcfcaf77ed7d9ad7c8c886530414d76c34808efefd57b488b065319f573a4ac806eb5da273c4320301ca6de6c682cd844f0a08c9b5e86f29431c32830d1feedf4d8bcd5d5ca90ef15084fffb98abe683d36e9de474ed069e8f72f4cdc7043cd38cb59878acef0674d0b48b8f0b9a0df326c8c7e97a5f35dcc1377f2e68d2e6076afb792db5ad38cb01158571e0c8b644e77c8d1b574653dcd73941070cd34deac7afe916952d3b67b4ad3e8993b33308c282de58e37afb28ae2afbb44f8e56b2e3ef575b67c5bc3112ccfedd07');
+    const fp12_zero = bls.fields.Fp12.ZERO;
+    const fp12_one = bls.fields.Fp12.ONE;
+    const fp12_pairing = bls.pairing(g1_a, g2_b);
+    const fp12_scalar_mul = bls.fields.Fp12.pow(fp12_pairing, scalar);
+
+    console.log('Fp12 a:', fp12ToHex(fp12_a));
+    console.log('Fp12 b:', fp12ToHex(fp12_b));
+    console.log('Fp12 zero:', fp12ToHex(fp12_zero));
+    console.log('Fp12 one:', fp12ToHex(fp12_one));
+    console.log('Fp12 pairing:', fp12ToHex(fp12_pairing));
+    console.log('Fp12 scalar mul:', fp12ToHex(fp12_scalar_mul));
+
+    const fp12_add = bls.fields.Fp12.add(fp12_a, fp12_b);
+    const fp12_sub = bls.fields.Fp12.sub(fp12_a, fp12_b);
+    const fp12_neg = bls.fields.Fp12.neg(fp12_a);
+    const fp12_mul = bls.fields.Fp12.mul(fp12_a, fp12_b);
+    const fp12_inv = bls.fields.Fp12.inv(fp12_a);
+
+    console.log('Fp12 add:', fp12ToHex(fp12_add));
+    console.log('Fp12 sub:', fp12ToHex(fp12_sub));
+    console.log('Fp12 neg:', fp12ToHex(fp12_neg));
+    console.log('Fp12 mul:', fp12ToHex(fp12_mul));
+    console.log('Fp12 inv:', fp12ToHex(fp12_inv));
 }
 
 function hexToFp12(hex: string): any {
     const c0 = bls.fields.Fp6.create({
-        c0: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(0, 96)), c1: BigInt('0x' + hex.slice(96, 192)) }),
-        c1: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(192, 288)), c1: BigInt('0x' + hex.slice(288, 384)) }),
-        c2: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(384, 480)), c1: BigInt('0x' + hex.slice(480, 576)) })
+        c0: bls.fields.Fp2.create({ c0: BigInt('0x' + reverseEndianess(hex.slice(0, 96))), c1: BigInt('0x' + reverseEndianess(hex.slice(96, 192))) }),
+        c1: bls.fields.Fp2.create({ c0: BigInt('0x' + reverseEndianess(hex.slice(192, 288))), c1: BigInt('0x' + reverseEndianess(hex.slice(288, 384))) }),
+        c2: bls.fields.Fp2.create({ c0: BigInt('0x' + reverseEndianess(hex.slice(384, 480))), c1: BigInt('0x' + reverseEndianess(hex.slice(480, 576))) })
     });
     const c1 = bls.fields.Fp6.create({
-        c0: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(576, 672)), c1: BigInt('0x' + hex.slice(672, 768)) }),
-        c1: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(768, 864)), c1: BigInt('0x' + hex.slice(864, 960)) }),
-        c2: bls.fields.Fp2.create({ c0: BigInt('0x' + hex.slice(960, 1056)), c1: BigInt('0x' + hex.slice(1056, 1152)) })
+        c0: bls.fields.Fp2.create({ c0: BigInt('0x' + reverseEndianess(hex.slice(576, 672))), c1: BigInt('0x' + reverseEndianess(hex.slice(672, 768))) }),
+        c1: bls.fields.Fp2.create({ c0: BigInt('0x' + reverseEndianess(hex.slice(768, 864))), c1: BigInt('0x' + reverseEndianess(hex.slice(864, 960))) }),
+        c2: bls.fields.Fp2.create({ c0: BigInt('0x' + reverseEndianess(hex.slice(960, 1056))), c1: BigInt('0x' + reverseEndianess(hex.slice(1056, 1152))) })
     });
     return bls.fields.Fp12.create({ c0, c1 });
 }
@@ -454,8 +469,8 @@ function fp12ToHex(fp12: any): string {
 
 const testCrypt = () => {
     // Example usage
-    const kzg = "050000000000000097f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb895c9094c4b01734283e744461c0a35630f5a8f5a7b1f413abc6a22f0403fd1ee7e4aa816762d2b27ffc1555fbefd4a0973bfa8d77bd5df4b8c29c3503b0468a28e25f4676ff069c3af1ef3af6ccf708aeeab4fc217c50c5fcd180730e97994282eed87d3835c0dda5b4c717014f276cf2eec5023eeaec51ec240afd862e6ded0bb0559f25863774ea38754556deb4fea2846f21f2083940ae18febfe5bb6cd012ea440add83153787b83af979026b49929d3febea6caa64f652cac68eaddb12050000000000000093e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8b40748a77a5859e873d43ceb66a5a7cbb55aed02bc100a0286f8fa1b434d99e10c749087a8bc838191eb7202e0e7051715b08f4ac6df9e7f9fd2aae9c53a81adf6fc8cacf86a3d814312967280da5e875a6c825936e7c17d8081e1216f31faf3936ef55385bd7e909393bd4e8b030253a66aacceb3b359ab9ba095242bb4596b7425cf091399eedbc908731900c008090914ddf5708fafb608e0ec75edb52260725e53768e8b564b94180ad8b0abfe355220c69ada5dad7824b30e5ed0df8bac822241eb5b4631246dea24ae9396f6667970eb6da7d450b4659584a95e4458b26a41c7f54985cab64454e3a38b80c5890f31b3b00092cce4053976867e465590ceff07cc9319e3c515ce2c6e876c2893c71d917094a70c6f767c7f4384f078ab8efa3e2d1a57c1907db0117084deac0413dc22ff4d34b0253daeefc440dcfd4823333792a4e78510b0709f7c02bbbbdf0ee73e994216e2be3d1bb0909e1ac2c68f6116f618f0df72e4fb6442793cd8351653611a1e4728aeedc49a0b02a5bca3";
-    const agg_key = "0400000000000000000000000000000097f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bba86a59129dabc7829ff704a76153da1526321489b4f41c1fc5b734f6eb334613faa472174f52ff0214ffa614da49a47b81b6e8025f7b89073e827fe8ae98a3dacda57ce8260951c13856f8fc86e7447c2819c3ce354b42691388d12aec3df87c0400000000000000a8849d3660df35d03e99e5c1ac14f98439901e699381d585cb0b985ec66209d4a5746836674a0bfa9c2784d4e98c4246a1543a894ff13b9ffd82060a9ebbaa23f61b69394a562a6b5f14661b3a68df1e4781188d1bde8886c5a047e50263d0efaa01cd9750d657cd81d801462ad125af638c3fba5530fa3f3aead1f353f9f80c1668450be0990dfb2c4739f80c6a61138bbbc3d80612e0548cfc7cf931ddf253d13ae15f43c6defe553b3e8bf869a2e3e1f4e2a318b456ab107c8c0357093bf0865251988b13989ac7a217619edcfe4ad70dcd1846a4c0ed43b2ef3a76bbb84d99998463b882308b83b588f5b48abc90010000000000000087c77aaf8f497a365bf9ee1fea6ccea16eda057b71f4fad0695311fc48c80eb95afa3eaced6a3ceb5340c2aed37c7c7bb0f279557368b9cd8918efcf1bc8c2683740389df78dd49f16f557e28cbe2f8f6756fdf9db972d0e7f3fab8b704d472d942a7b52948132dac7d14f63a7ce56741b03129df67e30c6a80866a84e5ac31f5b3679c50e69f8e9414c08930c41d2e9040000000000000088f0b23342b0d13e593ba48f6c5817aaa7a865a1d6959f74f3891e03ce4cf5206aacc2e7eb79a403be87d9c930f40d22aaf710862d0717bdf7a653791130e91f7f721be43942dae557962b2afbcdb4214937f50a4c9899c64c2f7f2dacbba62ba4273b2e5b71b64055e36615c3349c099282ac37035bd0581beb4bd9f33b2724e5b0c6e5222207e98ea406000da4304088db9e8ee60aff46feb0911cff1fbc259f766efe17d3f5053c43e488e8efee29aa76a74e6ad612d59f6d7e3ec091d0f18d83d6ff4fe87cf3fb1b742519560348dcdfb10b9d75d2053afa8b619c4593e69d84cc9b7f6ba32e48ded8fcb4479c7f0200000000000000a515d3b0d3c822cd2562b6657de7cc74caceae7ce70af874fa2f6f7e905d32a431274bb07d796d70628ee6cc183254b5806ddd927ce164e20b57031583ee330d486911dc248b93be40f4ed5768643e795a66c56c22264bd6c641f3c8ab5021f491b51d2454f728173b826f26a4bf0f50c2f29a1f3b9924345019a1baf702df5b18ab0753c5e4021ac8e0ee1de54c3ae00400000000000000a23788d9822d745a70c3288c50f9c5612453ed6c1bc489c0693954dce1ebeb763c942ff80428df21cf80d1fc3f14144d995f5d03c1a96e07f70c1572d39e5e38ff3adb492ba7fb980e63ba882921022bbb33a8d243407a8e0c2845c483decd4fb265f750abbb2febfad920a5f1d40e5aa80ddc62a5fc4568120104c7e7da662cac4ba3bb4ee07b17d61bee08d7192c7e98a0a290098d9ed67557b7fb961f4b3886238c7cc351979caf8930e968cd488a4c9d9f72990d8fc54ae3b3acb5f0744fb755af91bee1c8656d748d75234bac6ee01fbaeff7e18df093f3f90e1dfac2b6990e7759f2cbb577832acaa0a76816200300000000000000b9f884b889858ca1dba3ff73d5d9fa7beb69aa7af103a65d60d50b4e1f87b9cbc150e2660b83062aa7714210467fe7e0b6772dbb8a04191975f5cb6867dc2345d6e7446fe157f97fc55776bb2d8b53564599e447fc0ac51c658b4b38feaf8c3d869face60eda29cff6f2502b1cfa6cf4678f4e6b4821dc5ce30a57a81b72e64d2d68af8d80524ce49345b69b211ef7b20400000000000000a565afbb71752806b504426fb4401c5dff72eb37c067385bb05ad3498266983b2cefe57edccebd4e2be31933dadb1995a066641ba7d47a6e20ba9b7767dc4784457eecbcd8cdb29a60b420e241da9577d40e8528777aaf3fb0889789408a08f188de9056d8667f76600f96eabce4540aacf6518720b716ada453ba92448da8a5e57eee35a59e000a6b196c5bf41a94fd89efb1dbba323130bbb4b8646bd3acee3ff46f48b8ffabde6585c0a56426a08450499929d9fa3ecb387ebbe565a1bf92a1f43384991d324b9d48416ec2b3829ae9cc15bdc1c1f16c6d62265e40bd0c67df5a26e668406655ac91ade175969fd40400000000000000afadc6124fdf930dc6ed5c96c703a4c7c9d5210e486c1e7f5510e45969d4ab9f1d121ddc641579c5fe050860ce87415bb6b2b84bed7ff640b41d543d1b7b3832f7d16c79e28cb46425dc1dfab7ae99396a2f6f78ce315ef59081e5df2eee2f7192e0f4adcebb23054a8f0088991e7a47bee85133ae20acdafaaa2d9fe6c7958c81cf89478cbc5dce5b0c0c266f86ac68ab6c242eb6ec53ab425471f4bd97c64d4b6784e3df2c08cc7068b0f4de08006cf4b1c218eabe696b1ca51a786ec64b09b80bc8ee36d2b25ad1738b94e2874271543cba19c722a657612b893547418005caa72934cbe523bff9adbbfaeeecdccb9900478282abc351dbd0aebab8b7d5616490e522ec4df828bf161a1546a647ed58c4b2a765a96035bee6a2ee1be76c080a02bb63a6a83f4f03acf8a3406934ffc4b9e2b5a35ff52eb1ed007967740e239f3377fd81753c175f84ab6407f983b7b3e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8b68917caaa0543a808c53908f694d1b6e7b38de90ce9d83d505ca1ef1b442d2727d7d06831d8b2a7920afc71d8eb50120f17a0ea982a88591d9f43503e94a8f1abaf2e4589f65aafb7923c484540a868883432a5c60e75860b11e5465b1c9a08873ec29e844c1c888cb396933057ffdd541b03a5220eda16b2b3a6728ea678034ce39c6839f20397202d7c5c44bb68134f93193cec215031b17399577a1de5ff1f5b0666bdd8907c61a7651e4e79e0372951505a07fa73c25788db6eb8023519a5aa97b51f1cad1d43d8aabbff4dc319c79a58cafc035218747c2f75daf8f2fb7c00c44da85b129113173d4722f5b201b6b4454062e9ea8ba78c5ca3cadaf7238b47bace5ce561804ae16b8f4b63da4645b8457a93793cbd64a7254f150781019de87ee42682940f3e70a88683d512bb2c3fb7b2434da5dedbb2d0b3fb8487c84da0d5c315bdd69c46fb05d23763f2191aabd5d5c2e12a10b8f002ff681bfd1b2ee0bf619d80d2a795eb22f2aa7b85d5ffb671a70c94809f0dafc5b73ea2fb0657bae23373b4931bc9fa321e8848ef78894e987bff150d7d671aee30b3931ac8c50e0b3b0868effc38bf48cd24b4b811a2995ac2a09122bed9fd9fa0c510a87b10290836ad06c8203397b56a78e9a0c61c77e56ccb4f1bc3d3fcaea7550f3503efe30f2d24f00891cb45620605fcfaa4292687b3a7db7c1c0554a93579e889a121fd8f72649b2402996a084d2381c5043166673b3849e4fd1e7ee4af24aa8ed443f56dfd6b68ffde4435a92cd7a4ac3bc77e1ad0cb728606cf08bf6386e5410f";
+    const kzg = "050000000000000097f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bba66faaac40fdee8c3c1d45504ef7de2ea2e70116c840e890663db1ff806b637e9e09aadf107b12eec69e17a195dea013a3611a4fe72b1b9a992b7ceab4030c25700354febd090032297468c4df5401c633b1b37cfbf60d695730e2099f32c4cd8bd8b289e42e9b22e31c20f4f603983901c6b83bd7e45347f15d229f9551c700e728c6aba6eeaf6114991ac3ba824a7ba91a07fa1966c955253f068ad5e631c6eccea80444865eb5936c73d4dadba2195ead003be3b5959bb734bc9d709c3db1050000000000000093e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8a484e6165080bbe30da99214ae7732c054628f7101388540ecb3a3cbf458124c173914e6d4798e089e5a1f897d8f3336001b101dd444ea602016f8a54770703439927a08d376d27efb3048692afc2ca35881c0fb0738b259afbd9cfb6ae6b9348bfd6e0c50557f1f6ea82958f017c807d040b6dee615687b0c80740ea1310dfca8ddda48e6ae96e65a2b1003ef2e9c560dfe4533bcf76074224e1b28c34de3ded2f4716faf488af6e29845340b58bbbcff493c9ec78fa12882210571b8bdecb4b8a0822ae9a4a038e8f7197f77e1be3ae87b6aabf1db7e7ae47bd284bd191dd29765589ad5edfed028743d7bf215debe17293ce739d0b93ffc5c29cc7eff57d42d8b9e3568f94d3da89d7901260c7f96c1513c31e7df617b6f12e60556820d10a98ceb629ccc67ee871ddc1387cf2164c2364605fc23ce175959ab259b17a815fd22ff78922bfa928abdb4fa8e48e629015d800ee5d79220d097aafce2de319922c50f304a3ae880b054e7864a94406f99d1c7a90c8f582ac04d70c0e8cac8b0";
+    const agg_key = "0400000000000000000000000000000097f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb985ccc4d04856dae505a2d2389fc01ef5516161a76e9ea93373f0f9494b52d13914099e3d435ef48ca25b6b61c1d1330a6277c4320791a87964f70f233073d56cac7a9ccbf7df2d4b1d5913310ad5cbd522ec789533ab225bae9d95b44d7fe970400000000000000838a186a26bcd9b712201284a4911b845c9eafe33a9ec215d6ac727ad3165eb037cdb061bffbf739493de50627cf075bad1add79b7b1385afde4c00a11894204280e073534b8a24ffdf8ef4ff6f6b02e049e1bbe87704ddeefbf3bae686b4eb48f14bf2802e5e4041e290817313d35add8acbce644dbac2cdc811d98a5d6f45b50461f7224c0e1eeb3c6a0752d114424977ca485a82ae33dcd6cb19ae6f2c972e08612380c2d1c165eba244e3036ddbf20b6987558339c27f293fe12e06bae56a2db1d8ccfb2e03d6e64b297f7ae9e66ac8a9c7723290081fc01fe8010ff10bca90ad4ce97ac1c17d0e3603dd112a9800100000000000000970010e5b9cc5a2e49a45c676b6d444af3d4da21c7352c8b285879c88b6039b83d845dae093f01a38ada297bb1bf23b0a9dc90a731445fc74556ae31d5cffc7d75e07ec1a6802b03f59d689f5ee40bae25e9252ccf3b80185eb32944e0879e45a45dd74adc58121c5a627cf334e53363108bc3ab5b575d1c6b8c002773ddabb86810abc9c2982ce19bc5a263cd83e19304000000000000009817395a9d1a61994e98cfccb2ad732961e65d097ce872196667ec552dc0ef5b5a1e8bd474527823017d73c1efef1eb5a80c244e3c4cc85160fd2ad2826743e35457473868c2e8bfb929eeb1357ddc691b24cbfb8547658c39c7762d6d36eedb92cd44b2fb19f77be91b3e45123fe5ed5184050d819861ec14cf6e28520100412e52d80fc15dd4a0cae3a2933b208963a7eaf8d1c4b677ff972bc04b3db8a0c643d8eb355017cc91299bd0ffbe88184d7e6790e35c6ce3d80ac5318053530706988083839e85b62d46514f8b7a9749960aa3cfbe4af333b66528670e577239dbb525d16a953e6375f4343625a23ae690020000000000000094f6e52fffd19e600b190177eda8401cea253531db41d99b3615cf6658f3a18fa8a0c0d635b6dbba6abfb1fea5a0a5ed8f1e0ff3bf1b59115b716a75c95811d29bb0a1da27b7e0ebaf38e441b3ec50ef4685a04bdcaf132d6e8854eaf44070f3b15f069d14984ec06d92ea2d887ab530c7d47d98362de6f001b5428e6bdfa3398858583a701bc467aad3aedecbfacc830400000000000000b706eec9c74d3bf1512a8ba400c9dbbdd1cd19be7f70d0b1ce9ddd85189eed4b3a042a095bf069682f6a69c3cca655b18ada11fea183bbddce5acda53b4689f8e820eeebbea7dc6e30e99b36930146b3dfbfda689cd4cb8c3e18cef6ed40b0ae80ba14c1ae752eb9cade78ccb6427f973afe5088b4e0c667602b8f09e0e8779ac06f49da7fcab83dafc2b1464143346fb18969e308ba1f3c5b1b5bc1e09e9309e13109650aa9503cdd2dc7c74964c80469e29c25cf075abf86dbcb943d8bdb0b9938a0d432a47d1e8ae8c496bc62b7f95cdb2d7124d56a98557c1af05a147b266f185c0a1eb3b0048f036f46c7a2de600300000000000000b951b5683430b5201b861e46581904119e1e5bf9c8c596c84ddc3e0d08aeb0e00f5a52c84f265edc7277e8677a3fb98cb93a2802403358e8ed2f7bf1fe4188cadb0fb80c3bd83544d1458dc95861f516cebefd1c70e555adb8f5e57478867b908a3577febc5839b8fdc5ae9bc8d4398a94ef9ee5da571b28cec5ba2b80daaac7ea3e267c053a9dde1f8e039ca4453906040000000000000099522b4d6264167ae678cea8e4c9ff2d196408f15e922341933fa21a30ce2a9e51369e141951dd2defdb27400d1c5f26953db9595e4baa87f68d537f7f390de997ea06bafcbd8f941ad4546884ea2a2fc4900f972ef21983d2d22be9e8844c5da9c5b5548a4904a69f82d0b7df7ce5dbc370602d98299b5e7482d5032a33e111ebed5b861b502fbc9cca1606f0fdb874b7da820d1af9609a930568b6851911fdb9c5b31894ad9a3c8861bdb64362439eaf90b35f2cb88a3adc47f8bd7fc2a8ef99bc3586c2aad0ef562247186c14d70bbd503064b97143d942b16242fdf1989069abaafdc748f15299582ffb61bb3caa04000000000000008b3272366394f554e778c9a0fc59c86e06dab272137c63e5e16667c021dfd36b0f0e395cc7e5f911d66e546c5923f009a491e18cbe682595b0692ad229de9a391e16019e94c6ea5bf162c8e9964eebdc206bda11a445abda726adaf8ed960eacb1b18cd0eb4345e404e9d0b79d17b1c366f153aec3ef8c9d1b8485af4503ea83adc9b4d22b5c2de0ebfabe74add65b428cf0893484f9efa75ee69e250a360d79bbef91a162d57e3584ca7019fa9a2940cf4bfa8bbb271f652891974aa331fd43a6eb7bfc5afd2cbc6c81e08e978d17347582217bb919912defba82fe3e463215b437fb0e0304e465a3917d5433a76591973f601205285a96e58e482efbbe70682b79f54173319e06decb3282d6986178937eeba8db2a60056ed3921f48c65f4e0aded64b3052bc39aa1a3e3f67347750735fd52b94e644d54c60fa754acdbffdc4e72a3205ae3958d7bfc1be6d33928db3e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8b68917caaa0543a808c53908f694d1b6e7b38de90ce9d83d505ca1ef1b442d2727d7d06831d8b2a7920afc71d8eb50120f17a0ea982a88591d9f43503e94a8f1abaf2e4589f65aafb7923c484540a868883432a5c60e75860b11e5465b1c9a08873ec29e844c1c888cb396933057ffdd541b03a5220eda16b2b3a6728ea678034ce39c6839f20397202d7c5c44bb68134f93193cec215031b17399577a1de5ff1f5b0666bdd8907c61a7651e4e79e0372951505a07fa73c25788db6eb8023519a5aa97b51f1cad1d43d8aabbff4dc319c79a58cafc035218747c2f75daf8f2fb7c00c44da85b129113173d4722f5b201b6b4454062e9ea8ba78c5ca3cadaf7238b47bace5ce561804ae16b8f4b63da4645b8457a93793cbd64a7254f150781019de87ee42682940f3e70a88683d512bb2c3fb7b2434da5dedbb2d0b3fb8487c84da0d5c315bdd69c46fb05d23763f2191aabd5d5c2e12a10b8f002ff681bfd1b2ee0bf619d80d2a795eb22f2aa7b85d5ffb671a70c94809f0dafc5b73ea2fb0657bae23373b4931bc9fa321e8848ef78894e987bff150d7d671aee30b3931ac8c50e0b3b0868effc38bf48cd24b4b811a2995ac2a09122bed9fd9fa0c510a87b10290836ad06c8203397b56a78e9a0c61c77e56ccb4f1bc3d3fcaea7550f3503efe30f2d24f00891cb45620605fcfaa4292687b3a7db7c1c0554a93579e889a121fd8f72649b2402996a084d2381c5043166673b3849e4fd1e7ee4af24aa8ed443f56dfd6b68ffde4435a92cd7a4ac3bc77e1ad0cb728606cf08bf6386e5410f";
     const powersOfTau = decodePowersOfTau(kzg);
     const aggregateKey = decodeAggregateKey(agg_key);
 
@@ -467,6 +482,7 @@ const testCrypt = () => {
 }
 
 demoFieldOperations();
+testCrypt();
 
 function bigintToBigEndianHex(value: BigInt, length: number): string {
     // Convert BigInt to hex string without the '0x' prefix
@@ -490,6 +506,22 @@ function bigintToBigEndianHex(value: BigInt, length: number): string {
     const bigEndianHex = reversedByteArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
     
     return bigEndianHex;
+}
+
+function reverseEndianess(hex: string): string {
+    // Ensure the hex string has an even length
+    if (hex.length % 2 !== 0) {
+        throw new Error('Hex string must have an even length');
+    }
+
+    // Split the hex string into an array of bytes
+    const byteArray = hex.match(/.{1,2}/g) || [];
+
+    // Reverse the array of bytes
+    const reversedByteArray = byteArray.reverse();
+
+    // Join the reversed array back into a hex string
+    return reversedByteArray.join('');
 }
 
 export { decodeAggregateKey, decodePowersOfTau, encodeCiphertext, encrypt, testCrypt };

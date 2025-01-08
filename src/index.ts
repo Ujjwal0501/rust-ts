@@ -3,6 +3,8 @@ import { bls12_381 as bls } from '@noble/curves/bls12-381';
 import { Buffer } from 'buffer';
 import { ProjPointType } from '@noble/curves/abstract/weierstrass';
 import { Fp, Fp12, Fp2, } from '@noble/curves/abstract/tower';
+import { hkdf } from '@noble/hashes/hkdf';
+import { sha256 } from '@noble/hashes/sha256';
 
 /**
  * Summary of porting the Silent Threshold encryption scheme from Rust to JavaScript.
@@ -479,6 +481,20 @@ const testCrypt = () => {
     console.log(ciph);
     const encoded = encodeCiphertext(ciph);
     console.log(encoded);
+}
+
+/**
+ * Performs key stretching using HKDF with SHA-256.
+ *
+ * @param input - The input hex string.
+ * @returns A stretched key as a hex string.
+ */
+function keyStretching(input: string): string {
+    const inputBuffer = Buffer.from(input, 'hex');
+    const salt = new Uint8Array(32); // 32 bytes of zero
+    const info = new TextEncoder().encode('aes_encryption');
+    const stretchedKey = hkdf(sha256, inputBuffer, salt, info, 32); // 32 bytes output key length
+    return Buffer.from(stretchedKey).toString('hex');
 }
 
 demoFieldOperations();

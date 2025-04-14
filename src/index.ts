@@ -1,5 +1,6 @@
 import init, { greet } from "../rust-proj/pkg";
 import { Api, CompilationRequest } from "./util/compile";
+import { fetchWithDelay } from "./util/chatpage";
 
 async function main() {
   await init();
@@ -113,3 +114,4 @@ cairo_test = "2.11.4"
 }
 
 main().catch(console.error);
+fetchWithDelay("http://localhost:8000/stdout");

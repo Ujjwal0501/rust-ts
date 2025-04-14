@@ -1,12 +1,123 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Rust + TypeScript Test</title>
-  </head>
-  <body>
-    <h1>Rust + TypeScript Test</h1>
-    <div id="output"></div>
-    <script type="module" src="/src/index.ts"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Page</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+        textarea {
+            flex: 1;
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            font-size: 16px;
+            resize: none;
+        }
+    </style>
+</head>
+<body>
+  <button id="toggleButton" style="background-color: #a8d5ba; color: white; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px;">Start</button>
+  <div style="display: flex; align-items: center;">
+    <div style="flex: 1; padding: 10px; display: flex; gap: 10px;">
+      <input type="text" placeholder="Type your message here..." id="messageInput" style="flex: 1;" />
+    </div>
+    <button id="sendButton" style="width: 5%; background-color: #87bfae; color: white; border: none; padding: 10px; margin-right: 10px; gap: 10px; font-size: 16px; cursor: pointer; border-radius: 5px;">Send</button>
+  </div>
+  <script>
+    document.getElementById('messageInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault(); // Prevent default form submission behavior
+        document.getElementById('sendButton').click();
+      }
+    });
+  </script>
+  <textarea readonly id="responseArea"></textarea>
+  <script>
+    const fetchWithDelay = async () => {
+      return new Promise((resolve) => {
+        setTimeout(async () => {
+          const response = await fetch('http://localhost:8000/stdout', { method: 'GET' });
+            const data = await response.json();
+            console.log(data);
+          resolve(data.stdout);
+        }, 1000); // Simulate a 1-second delay
+      });
+    };
+
+    async function updateTextarea() {
+      while (true) {
+        const response = await fetchWithDelay();
+        document.getElementById('responseArea').value = response;
+      }
+    }
+
+    document.getElementById('sendButton').addEventListener('click', () => {
+      const message = document.getElementById('messageInput').value;
+      if (message) {
+        console.log(`Sending message: ${message}`);
+        fetch(`http://localhost:8000/stdin?input_data=${message}%0a`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ message })
+        });
+        document.getElementById('messageInput').value = '';
+      }
+    });
+
+    const updateButtonStyle = () => {
+      if (isRunning) {
+        toggleButton.style.backgroundColor = '#f5a8a8'; // Pastel red
+        toggleButton.textContent = 'Stop';
+      } else {
+        toggleButton.style.backgroundColor = '#a8d5ba'; // Pastel green
+        toggleButton.textContent = 'Start';
+      }
+    };
+
+    let isRunning = false;
+    const toggleButton = document.getElementById('toggleButton');
+
+    toggleButton.addEventListener('click', () => {
+      const toggleButton = document.getElementById('toggleButton');
+      if (isRunning) {
+        fetch('http://localhost:8000/stop-all', { method: 'POST' })
+          .then(() => {
+            isRunning = false;
+            updateButtonStyle();
+            console.log('Stopped');
+          })
+          .catch((error) => console.error('Error stopping:', error));
+      } else {
+        fetch('http://localhost:8000/start', { method: 'POST' })
+          .then(() => {
+            isRunning = true;
+            updateButtonStyle();
+            console.log('Started');
+          })
+          .catch((error) => console.error('Error starting:', error));
+      }
+    });
+
+    updateTextarea();
+    updateButtonStyle(); // Initialize button style
+
+  </script>
+</body>
 </html>
